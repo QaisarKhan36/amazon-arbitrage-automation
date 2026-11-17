@@ -1,84 +1,63 @@
-# Amazon Arbitrage Automation Toolkit
+# Amazon Arbitrage Automation
 
-Python and Selenium tools that automate an Amazon seller's daily work. They find profitable products, check whether the seller is allowed to list them, and take each order from sale to delivery. Google Sheets serves as the shared dashboard.
+These are the Python scripts I wrote while freelancing for Amazon sellers (2023-2025). They automate most of the repetitive work in an online arbitrage store: finding products, checking if they're profitable, checking if the seller is even allowed to list them, and handling orders once they come in. Everything goes into Google Sheets so the seller and their team can see it.
 
-I built this as freelance work for Amazon sellers (2023–2025). It is about 5,000 lines of Python across 40 scripts.
+It's around 5,000 lines of Python across 40 scripts. It grew one script at a time as clients asked for new things, so it's more of a toolkit than one app.
 
----
+## Why I built this
 
-## The problem
+My clients buy products from retail and wholesale sites and resell them on Amazon. Before this they were doing everything by hand. They went through supplier catalogs, searched each item on Amazon, worked out fees and pack sizes on a calculator, then copied every new order into a spreadsheet and made labels one by one. That was taking hours every day, so I started automating it piece by piece.
 
-An online-arbitrage seller buys products from retail and wholesale websites and resells them on Amazon. By hand, that means:
+## How it flows
 
-- browsing supplier catalogs and copying products one by one
-- finding the same item on Amazon and working out fees, pack sizes and profit
-- checking whether the seller account is allowed to sell each item
-- copying every new order into a spreadsheet, then buying the item, making a shipping label and tracking delivery
+```
+Supplier sites -> product list -> Amazon match -> profit/ROI check -> eligibility check -> sheets
 
-That adds up to hours of copy-and-paste every day. This toolkit automates most of it.
-
-## How it works
-
-```mermaid
-flowchart LR
-    subgraph Sourcing
-        A[Supplier websites] -->|scrape catalogs| B[Product list]
-        B -->|search Amazon matches| C[Matched ASINs]
-        C -->|pack size, fees, ROI| D[Profitable products]
-        D -->|Seller Central check| E[Sellable / Needs approval / Restricted]
-    end
-    subgraph Orders
-        F[New Amazon orders] -->|import + enrich| G[TOSHIP sheet]
-        G --> H[Shipping labels]
-        H --> I[Tracking updates]
-        I --> J[Shipped, refunds, inventory cost]
-    end
+New orders -> TOSHIP sheet -> shipping labels -> tracking -> shipped / refunds / inventory cost
 ```
 
-### 1. Product sourcing
+## What it does
 
-- **Supplier scraping:** collects product name, price, link, variation and pack size from 12 supplier websites (for example Walmart, WebstaurantStore and Bulk Office Supply), including multi-page categories.
-- **Amazon matching:** searches for each supplier product and pulls out the matching Amazon ASIN, title and price.
-- **Pack size and variation parsing:** a regex engine (`Reg.py`) reads titles such as "Pack of 12", "24 ct" or "3-Pack", plus size and color variations, so a single unit is never compared with a 12-pack.
-- **Profit and ROI calculation:** converts the Buy Box price to a per-unit price, subtracts the FBA fee, the referral fee and the supplier cost, then reports profit and ROI for each product.
-- **Competitor storefront research:** collects the product lists of selected competitor storefronts on Amazon.
-- **Selling-eligibility check:** checks each ASIN in Seller Central for listing restrictions, requests approval automatically where Amazon allows it, and sorts products into *ready to sell*, *approval requested* and *not eligible* sheets.
+### Finding products
 
-### 2. Order operations
+- Scrapes product name, price, link, variation and pack size from 12 supplier sites (Walmart, WebstaurantStore, Bulk Office Supply and others), going through every page of a category.
+- Searches for each product on Amazon and grabs the ASIN, title and price of the match.
+- `Reg.py` reads pack sizes and variations out of product titles ("Pack of 12", "24 ct", "3-Pack", sizes, colors). This matters a lot, because if you compare a single item with a 12-pack the profit numbers are completely wrong.
+- Works out profit and ROI: Buy Box price per unit, minus the FBA fee, referral fee and supplier cost.
+- Pulls the product lists of competitor storefronts so the seller can see what others are selling.
+- Goes into Seller Central and checks if each ASIN is restricted. If Amazon allows it, the script requests approval automatically. Then it sorts everything into three sheets: ready to sell, approval requested and not eligible.
 
-- **Order import:** reads unshipped orders from Seller Central across every results page, skips duplicates and adds new orders to the `TOSHIP` sheet.
-- **Order enrichment:** opens each order and fills in shipping details, ship-by and deliver-by dates, the matched supplier link, cost, fees, profit and ROI. It also looks up stock across several inventory sheets.
-- **Shipping labels:** turns orders marked for labeling into a bulk label sheet with sender, recipient, package size, weight and pack count.
-- **Tracking:** checks USPS tracking status and updates each order's row.
-- **Shipped orders and refunds:** syncs shipped orders and records any refunds found on the order pages.
-- **Inventory costing (FIFO):** calculates the cost of goods sold first-in, first-out across purchase batches and keeps the in-stock inventory current. It supports two business partners who share stock: when one partner ships units that the other bought, the borrowed units are costed separately for each partner.
+### Handling orders
 
-## Built to run unattended
+- `ToShip.py` reads all unshipped orders from Seller Central (every page), skips the ones already in the sheet and adds the new ones to `TOSHIP`.
+- It then opens each order and fills in the shipping details, ship-by and deliver-by dates, supplier link, cost, fees, profit and ROI, and checks stock in the inventory sheets.
+- `labels.py` turns the orders marked for labels into a bulk label sheet (address, package size, weight, pack count).
+- The tracking scripts check USPS status and update each order.
+- Other scripts sync shipped orders and record refunds.
+- `InventoryConcepts.py` does FIFO costing. The business had two partners sharing the same stock, so when one partner ships units the other one bought, it works out the borrowed cost for each of them separately.
 
-These scripts run for hours, often overnight, so they are designed to recover on their own:
+## Keeping it running overnight
 
-- **Survives internet drops:** waits and retries instead of crashing (`SharedFunc.py`).
-- **Handles dynamic pages:** uses Selenium explicit waits, and selects Seller Central dropdowns that are rendered in shadow DOM with JavaScript. It opens and closes the extra browser tabs that some actions create.
-- **Stays inside Google Sheets API limits:** writes rows in batches of 10–50 instead of one call per cell.
-- **Safe to re-run:** duplicate checks ensure the same order is never added twice.
-- **Polite request rate:** waits a random interval between searches, and pauses so a person can respond if a CAPTCHA appears.
-- **No stored passwords:** scripts open Chrome and wait for you to sign in to Seller Central yourself, including the one-time code. No Amazon login details are kept in the code.
+Most of these scripts run for hours with nobody watching, so a lot of the work went into stopping them from breaking:
+
+- If the internet drops, they wait and retry instead of crashing (`SharedFunc.py`).
+- Seller Central has dropdowns inside shadow DOM that normal Selenium clicks can't reach, so I select them with JavaScript. The scripts also deal with the extra tabs some actions open.
+- Google Sheets has API limits, so rows are written in batches of 10 to 50 instead of one cell at a time.
+- Running a script twice won't add the same order twice.
+- There's a random wait between searches, and if a CAPTCHA shows up the script pauses until someone solves it.
+- No Amazon passwords in the code. The scripts open Chrome and wait for you to log in yourself, OTP included.
 
 ## Results
 
-> Replace these with your real numbers before publishing.
+- Saved my client around 50 hours of manual work a week.
 
-- Saves about **[X] hours per week** of manual work
-- Processes **[X] orders per day** from import to label
-- Screens **[X] supplier products per run** for profitable matches
+## Tech
 
-## Tech stack
+Python 3.13, Selenium (Chrome), BeautifulSoup, gspread (Google Sheets API), Google service accounts, regex, requests
 
-**Python 3.13** · **Selenium** (Chrome) · **BeautifulSoup** · **gspread** / Google Sheets API · Google service accounts · regex · requests
+## Scripts
 
-## Project structure
-
-| Stage | Scripts |
+| Part | Scripts |
 |---|---|
 | Supplier scraping | `WalmartGet.py`, `Webstaurant.py`, `Products.py`, `Bulkoffice.py`, `KTSupplyW.py`, `YamiGet.py`, `vipbarber.py`, `regowholesale.py`, `pricemaster.py`, `ThriftyWhite.py`, `Youngsga.py`, `EEdistribution.py`, `OTCWebGet.py` |
 | Amazon matching | `ReverseSel.py`, `ReverseSoup.py`, `GoogleAmz.py`, `SelSearch.py`, `SoupSearch.py`, `SoupSearch2.py`, `ExtractSel.py`, `ExtractSoup.py`, `AsinExtractFromAmazonLink.py` |
@@ -90,51 +69,50 @@ These scripts run for hours, often overnight, so they are designed to recover on
 | Inventory | `Inventory.py`, `InventoryConcepts.py` |
 | Shared helpers | `SharedFunc.py` |
 
-## Setup
+## How to run it
 
-**1. Install the requirements**
+1. You need Python 3.10+ and Chrome. Install the packages:
 
-You need Python 3.10 or newer and Google Chrome.
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-```bash
-pip install -r requirements.txt
-```
+2. Create a service account in Google Cloud and download its JSON key. Save it in the project folder as `credentials1.json` (it's in `.gitignore`, so it won't get committed). Then share your Google Sheet with the service account's email and give it Editor access.
 
-**2. Connect Google Sheets**
+3. Each script has a config section at the top. Replace the placeholders with your own values:
 
-1. In Google Cloud, create a service account and download its JSON key.
-2. Save the key in the project folder as `credentials1.json`. It is listed in `.gitignore`, so it is never committed.
-3. Share your Google Sheet with the service account's email address and give it Editor access.
+   | Placeholder | What it's for |
+   |---|---|
+   | `YOUR_SOURCING_SHEET_ID` | Product research sheet (tabs `sheet1` to `sheet4`) |
+   | `YOUR_ORDERS_SHEET_ID` | Orders sheet (tabs `TOSHIP`, `SHIPPED`) |
+   | `YOUR_PARTNER_A_ORDERS_SHEET_ID`, `YOUR_PARTNER_B_ORDERS_SHEET_ID` | Each partner's order sheet, used for inventory and refunds |
+   | `YOUR_INVENTORY_SHEET_ID` | Purchases and stock |
+   | `YOUR_LABELS_SHEET_ID` | Where the bulk labels go |
+   | `sender_info` in `labels.py` | Your return address |
+   | `SELLER_URLS` in `SellersProducts.py` | Storefronts you want to research |
 
-**3. Fill in your own settings**
+   The sheet ID is the long code in the sheet's link: `docs.google.com/spreadsheets/d/<SHEET_ID>/edit`
 
-Each script has a config section near the top. Replace the placeholders with your own values:
+4. Run a script:
 
-| Placeholder | What it is |
-|---|---|
-| `YOUR_SOURCING_SHEET_ID` | Product research sheet (tabs `sheet1`–`sheet4`) |
-| `YOUR_ORDERS_SHEET_ID` | Order sheet (tabs `TOSHIP`, `SHIPPED`) |
-| `YOUR_PARTNER_A_ORDERS_SHEET_ID`, `YOUR_PARTNER_B_ORDERS_SHEET_ID` | Each partner's order sheet, used for inventory and refunds |
-| `YOUR_INVENTORY_SHEET_ID` | Purchases and in-stock inventory |
-| `YOUR_LABELS_SHEET_ID` | Output sheet for bulk shipping labels |
-| `sender_info` in `labels.py` | Your return address for labels |
-| `SELLER_URLS` in `SellersProducts.py` | Storefront links of sellers to research |
+   ```bash
+   python ToShip.py
+   ```
 
-A sheet ID is the long code in the sheet's link: `docs.google.com/spreadsheets/d/<SHEET_ID>/edit`.
+   For anything that uses Seller Central, Chrome opens and waits for you to log in, then it carries on by itself.
 
-**4. Run a script**
+## What I'd do differently now
 
-```bash
-python ToShip.py
-```
+- Put all the settings in one config file instead of at the top of every script.
+- Merge the duplicate versions. Some scripts have a Selenium version and a BeautifulSoup version (like `ReverseSel.py` and `ReverseSoup.py`).
+- Use Amazon's Selling Partner API where I can instead of reading Seller Central pages.
+- Keep the data in a real database and use Google Sheets only for viewing.
+- Add tests.
 
-Scripts that use Seller Central open Chrome and wait for you to sign in, then continue on their own.
+## Note
 
-## Notes
-
-This project was built for real seller operations. Automated access may be limited by the terms of the websites involved, so use it responsibly.
+This was built for real seller operations. Scraping can go against some sites' terms, so use it responsibly.
 
 ## Author
 
-**Qaisar Khan**
-[GitHub](https://github.com/QaisarKhan36) · [LinkedIn](https://www.linkedin.com/in/qaisar-khan-dev)
+Qaisar Khan - [GitHub](https://github.com/QaisarKhan36) - [LinkedIn](https://www.linkedin.com/in/qaisar-khan-dev)
