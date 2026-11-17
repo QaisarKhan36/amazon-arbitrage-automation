@@ -1,0 +1,11 @@
+credentials*.json
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.html
+ExtractedProducts.txt
+.DS_Store
+.vscode/
+__MACOSX/
