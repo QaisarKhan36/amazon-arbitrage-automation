@@ -1,0 +1,8 @@
+selenium
+webdriver-manager
+beautifulsoup4
+gspread
+oauth2client
+google-auth
+requests
+urllib3
